@@ -1,0 +1,10 @@
+# to extract sentences
+cat nxt_cmd.txt | python nxt_command.py 2> /dev/null > out/out.txt
+
+# build lexicalized linearized syntax tree lookup table
+python linearize.py --lex > out/tree.json
+# unlexicalized
+python linearize.py > out/tree.json
+
+# batch convert: .sph -> .wav
+for f in *.sph; do sox -t sph "$f" -b 16  -t wav "${f%.*}.wav"; done

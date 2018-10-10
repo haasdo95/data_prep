@@ -1,0 +1,15 @@
+# user-generated
+out
+data
+# add your own data_dir here if you want to save the pain!!!
+
+# data sets
+swb1_LDC97S62
+nxt_switchboard_ann
+
+# annoying IDE/editor temp files
+.vscode
+.idea
+.DS_Store
+__pycache__
+.ipynb_checkpoints

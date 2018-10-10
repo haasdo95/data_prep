@@ -1,0 +1,3 @@
+java FunctionQuery -c nxt_switchboard_ann/xml/swbd-metadata-slim.xml -q
+    '($nt nt): TIMED($nt) && $nt@cat="S"'
+    -atts '$nt@nite:id' '$nt@nite:start' '$nt@nite:end'

@@ -7,4 +7,5 @@ python linearize.py --lex > out/tree.json
 python linearize.py > out/tree.json
 
 # batch convert: .sph -> .wav
-for f in *.sph; do sox -t sph "$f" -b 16  -t wav "${f%.*}.wav"; done
+# NOTE: swbd is 8-bit mu-law
+for f in *.sph; do sox -t sph "$f" -b 8 -e unsigned-integer -t wav "${f%.*}.wav"; done

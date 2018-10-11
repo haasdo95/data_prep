@@ -36,16 +36,18 @@ class Pairer:
             os.system("mkdir {}".format(out_dir))
         sentence_dict = self.tree_db[observation_id][sentence_id]
         sentence = Sentence(sentence_dict["linearized_tree"],
-                            float(sentence_dict["start"]), float(sentence_dict["end"]))
+                            float(sentence_dict["start"]), float(sentence_dict["end"]), sentence_dict["ab"])
         rate_and_data = self._cache.get(observation_id, None)  # use cache to minimize sph reading
         if rate_and_data is None:
             rate_and_data = self._load_wavfile(observation_id)
             self._cache[observation_id] = rate_and_data
         rate, data = rate_and_data
         # write wav
+        # TODO: make sure that this is the right way to slice
         start_frame, end_frame = int(sentence.start * rate), int(sentence.end * rate)
         assert start_frame < end_frame
-        wf.write(os.path.join(out_dir, "speech.wav"), rate, data[start_frame: end_frame, :])
+        # TODO: make sure it's okay to split A, B channels this way
+        wf.write(os.path.join(out_dir, "speech.wav"), rate, data[start_frame: end_frame, 0 if sentence.ab == "A" else 1])
         # write linearized syntax tree
         with open(os.path.join(out_dir, "syntax.txt"), mode="w") as f:
             f.write(sentence.linearized_tree)

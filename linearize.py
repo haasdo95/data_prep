@@ -13,10 +13,14 @@ from settings import *
 
 
 class Sentence:
-    def __init__(self, linearized_tree: str, start: float, end: float):
+    def __init__(self, linearized_tree: str, start: float, end: float, ab: str):
+        """
+        :param ab: whether it's speaker A or B
+        """
         self.linearized_tree = linearized_tree
         self.start = start
         self.end = end
+        self.ab = ab
 
 
 class Word:
@@ -107,8 +111,8 @@ def make_tree_bank(lexicalized: bool) -> Dict[str, Dict[str, Dict]]:
     ob_filenames = [os.path.join(path, f) for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
     for ob_filename in ob_filenames:
         print("stx_db: ", ob_filename, file=sys.stderr)
-        s = re.search("(sw[0-9]+).[AB].syntax.xml", ob_filename)
-        ob_name = s.group(1)
+        s = re.search("(sw[0-9]+).([AB]).syntax.xml", ob_filename)
+        ob_name, ab = s.group(1), s.group(2)
         niteid = "{http://nite.sourceforge.net/}id"
 
         tree = ET.parse(ob_filename).getroot()
@@ -122,9 +126,16 @@ def make_tree_bank(lexicalized: bool) -> Dict[str, Dict[str, Dict]]:
                     start = root_nt.attrib.get("{http://nite.sourceforge.net/}start", None)
                     end = root_nt.attrib.get("{http://nite.sourceforge.net/}end", None)
                     if start is None or end is None:
-                        print("WARNING: untimed sentence in {}".format(ob_name), file=sys.stderr)
+                        print("WARNING: untimed sentence in {}, missing field".format(ob_name), file=sys.stderr)
                         continue
-                    d[ob_name][sentence_id] = Sentence(linearize(root_nt, lexicalized, term_db), start, end).__dict__
+                    try:
+                        float(start)
+                        float(end)
+                    except ValueError:
+                        print("WARNING: untimed sentence in {}, bad float".format(ob_name), file=sys.stderr)
+                        continue
+                    d[ob_name][sentence_id] = Sentence(linearize(root_nt, lexicalized, term_db),
+                                                       float(start), float(end), ab).__dict__
     return dict(d)
 
 

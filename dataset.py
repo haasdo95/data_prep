@@ -9,6 +9,7 @@ from torch import nn
 from torch import utils
 import re
 import sys
+import numpy as np
 from collections import defaultdict
 
 """
@@ -64,8 +65,8 @@ def syntax_token_type(root: str) -> Tuple[Dict[str, int], Set[str]]:
                 continue
             for t in tokens:
                 token_set[t] += 1
-    print("Syntax Token Count: ")
-    print(token_set)
+    # print("Syntax Token Count: ")
+    # print(token_set)
 
     # TODO: According to the reference(https://catalog.ldc.upenn.edu/docs/LDC99T42/tagguid2.pdf),
     # TODO: the "^" on POS tag is to deal with the case where a word has wrong orthography
@@ -142,7 +143,8 @@ class SpeechSyntax(Dataset):
         # do something transformation on syntax tokens:
         # ^XP -> XP
         # XP | YP -> XP
-        syntax_tokens = _tokenize_syntax(syntax)
+        syntax_tokens = re.split("([\[\]])", syntax)
+        syntax_tokens.remove("")
         for i in range(len(syntax_tokens)):
             st = syntax_tokens[i]
             if re.match("^\^[A-Z]+\$?$", st):
@@ -153,24 +155,51 @@ class SpeechSyntax(Dataset):
         return speech, syntax_idx
 
 
-def _pack_sequences(sequences: List[torch.Tensor]) -> nn.utils.rnn.PackedSequence:
+def _pack_sequences(sequences: List[torch.Tensor]) -> Tuple[nn.utils.rnn.PackedSequence, torch.LongTensor]:
     """
     packs the variable-length sequences in a batch first manner
     :param sequences:
     :return: packed sequences
+    :return: INVERTED perm index to restore order later (after we are through RNN)
     """
+    # We must remember the permutation index to restore the order before sorting
+    lengths = torch.Tensor([len(seq) for seq in sequences])
+    _, perm_index = lengths.sort(dim=0, descending=True)
     # sort by length in decreasing order
-    sorted_sequences_by_length = sorted(sequences, key=len, reverse=True)
-    return nn.utils.rnn.pack_sequence(sorted_sequences_by_length)
+    sorted_sequences_by_length = [sequences[i] for i in perm_index]
+    return nn.utils.rnn.pack_sequence(sorted_sequences_by_length), invert_permutation(perm_index)
+
+
+def invert_permutation(p: torch.LongTensor) -> torch.LongTensor:
+    """
+    CREDIT: https://stackoverflow.com/questions/11649577/how-to-invert-a-permutation-array-in-numpy
+    The argument p is assumed to be some permutation of 0, 1, ..., len(p)-1.
+    Returns an array s, where s[i] gives the index of i in p.
+    """
+    assert len(p.shape) == 1
+    s = np.empty(len(p), np.long)
+    s[p] = np.arange(len(p))
+    return torch.LongTensor(s)
+
+
+def restore_order(data: torch.Tensor, invert_perm_index: torch.LongTensor) -> torch.Tensor:
+    """
+    :param data: a batch-first data batch
+    :param invert_perm_index: indexing to restore order before sorting by length
+    :return: batch-first data with restored order
+    """
+    return data.index_select(dim=0, index=invert_perm_index)
 
 
 def speech_syntax_collate_fn(data: List[Tuple[torch.FloatTensor, torch.LongTensor]]) \
-        -> Tuple[nn.utils.rnn.PackedSequence, nn.utils.rnn.PackedSequence]:
+        -> Tuple[Tuple[nn.utils.rnn.PackedSequence, torch.LongTensor],
+                 Tuple[nn.utils.rnn.PackedSequence, torch.LongTensor]]:
     """
     The default collate_fn in DataSet can't deal with variable-length input
     In this function we'll pack it and make it palatable for RNN
     :param data: a list of (speech syntax) tuple
     :return: a batch of packed speech, a batch of packed syntax (syntax indices)
+    :return: bundled with their INVERTED permutation index of sorting
     """
     speeches, syntaxes = zip(*data)
     return _pack_sequences(speeches), _pack_sequences(syntaxes)

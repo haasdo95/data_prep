@@ -2,9 +2,14 @@
 cat nxt_cmd.txt | python nxt_command.py 2> /dev/null > out/out.txt
 
 # build lexicalized linearized syntax tree lookup table
-python linearize.py --lex > out/tree.json
+python linearize.py --lex > out/out_lex.json
 # unlexicalized
-python linearize.py > out/tree.json
+python linearize.py > out/out_unlex.json
+
+# materialize lexicalized data
+cat out/out_lex.json | python materialize.py lexicalized_data
+# materialize lexicalized data
+cat out/out_unlex.json | python materialize.py
 
 # batch convert: .sph -> .wav
 # NOTE: swbd is 8-bit mu-law

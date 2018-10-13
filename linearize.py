@@ -49,14 +49,14 @@ def linearize(tree: ET.Element, lexicalized: bool, term_db: Dict[str, Dict[str, 
             print("WARNING: word discrepancy on {}, {}".format(observation_id, terminal_id), file=sys.stderr)
             word = Word("<UNK>", "UNK")
         if not lexicalized:
-            return "({})".format(word.pos)
+            return "[{}]".format(word.pos)
         else:
-            return "({}({}))".format(word.pos, word.orth)
+            return "[{}[{}]]".format(word.pos, word.orth)
     else:
-        s = "(" + tree.attrib["cat"]
+        s = "[" + tree.attrib["cat"]
         for child in tree:
             s += linearize(child, lexicalized, term_db)
-        s += ")"
+        s += "]"
         return s
 
 
@@ -87,7 +87,7 @@ def make_terminal_db():
             elif term.tag == "sil":
                 d[ob_name][terminal_id] = Word("<SIL>", "SIL")
             elif term.tag == "punc":
-                d[ob_name][terminal_id] = Word(term.text, "PUNC")
+                d[ob_name][terminal_id] = Word("<PUNC>", "PUNC")
             elif term.tag == "trace":
                 d[ob_name][terminal_id] = Word("<TRACE>", "TRACE")
             else:

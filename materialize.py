@@ -32,8 +32,6 @@ class Pairer:
         :return: the subdir under data_dir where speech wav and linearized syntax are stored
         """
         out_dir = os.path.join(self.data_dir, "{}#{}".format(observation_id, sentence_id))  # e.g. sw2005#s2_7
-        if not os.path.exists(out_dir):  # create the subdir if it's not there already
-            os.system("mkdir {}".format(out_dir))
         sentence_dict = self.tree_db[observation_id][sentence_id]
         sentence = Sentence(sentence_dict["linearized_tree"],
                             float(sentence_dict["start"]), float(sentence_dict["end"]), sentence_dict["ab"])
@@ -47,6 +45,8 @@ class Pairer:
         start_frame, end_frame = int(sentence.start * rate), int(sentence.end * rate)
         assert start_frame < end_frame
         # TODO: make sure it's okay to split A, B channels this way
+        if not os.path.exists(out_dir):  # create the subdir if it's not there already
+            os.system("mkdir {}".format(out_dir))
         wf.write(os.path.join(out_dir, "speech.wav"), rate, data[start_frame: end_frame, 0 if sentence.ab == "A" else 1])
         # write linearized syntax tree
         with open(os.path.join(out_dir, "syntax.txt"), mode="w") as f:

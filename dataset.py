@@ -81,11 +81,11 @@ def syntax_token_type(root: str) -> Tuple[Dict[str, int], Set[str]]:
     return token_dict, set(blacklist)
 
 
-def make_syntax_embedding(token_dict: Dict, trainable) -> nn.Embedding:
+def make_syntax_embedding(syntax_vocabulary: Dict, trainable: bool) -> nn.Embedding:
     # TODO: maybe I can make the embedding trainable and see what happens? (PCA and visualize?)
     if not trainable:  # simply use one-hot
-        emb = nn.Embedding(len(token_dict), len(token_dict))
-        emb.from_pretrained(torch.eye(len(token_dict)), freeze=True)
+        emb = nn.Embedding(len(syntax_vocabulary), len(syntax_vocabulary))
+        emb.from_pretrained(torch.eye(len(syntax_vocabulary)), freeze=True)
         return emb
     else:
         raise NotImplemented("No trainable embedding yet.")
@@ -103,6 +103,7 @@ class SpeechSyntax(Dataset):
         :param root: data dir
         :param phase: train, validate, or test
         :param syntax_vocabulary: a dictionary that maps syntax tokens to their indices into the embedding
+        :param blacklist: a set of sentences that will be excluded
         """
         self.phase = phase
         self.syntax_vocabulary = syntax_vocabulary

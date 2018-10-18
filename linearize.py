@@ -45,6 +45,10 @@ def linearize(tree: ET.Element, lexicalized: bool, term_db: Dict[str, Dict[str, 
         observation_id, terminal_id = s.group(1), s.group(2)
         if terminal_id in term_db[observation_id]:
             word = term_db[observation_id][terminal_id]
+            # NOTE: we ignore SIL since it is not a part of syntax
+            # a trace is caused by syntactic movement that is rather tough to handle
+            if word.pos == "SIL":
+                return ""
         else:
             print("WARNING: word discrepancy on {}, {}".format(observation_id, terminal_id), file=sys.stderr)
             word = Word("<UNK>", "UNK")
@@ -74,7 +78,7 @@ def make_terminal_db():
     path = os.path.join(NXT_ROOT, "xml", "terminals")
     ob_filenames = [os.path.join(path, f) for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
     for ob_filename in ob_filenames:
-        print("term_db: ", ob_filename, file=sys.stderr)
+        # print("term_db: ", ob_filename, file=sys.stderr)
         s = re.search("(sw[0-9]+).[AB].terminals.xml", ob_filename)
         ob_name = s.group(1)
         niteid = "{http://nite.sourceforge.net/}id"
@@ -86,10 +90,13 @@ def make_terminal_db():
                 d[ob_name][terminal_id] = Word(term.attrib["orth"], term.attrib["pos"])
             elif term.tag == "sil":
                 d[ob_name][terminal_id] = Word("<SIL>", "SIL")
-            elif term.tag == "punc":
-                d[ob_name][terminal_id] = Word("<PUNC>", "PUNC")
             elif term.tag == "trace":
                 d[ob_name][terminal_id] = Word("<TRACE>", "TRACE")
+            elif term.tag == "punc":
+                puncStr = term.text
+                if puncStr != "." and puncStr != "?" and puncStr != "!":
+                    print("Unusual Punc: ", puncStr, file=sys.stderr)
+                d[ob_name][terminal_id] = Word(puncStr, puncStr)
             else:
                 raise Exception("Unknown Tag: " + term.tag)
     return dict(d)
@@ -110,7 +117,7 @@ def make_tree_bank(lexicalized: bool) -> Dict[str, Dict[str, Dict]]:
     path = os.path.join(NXT_ROOT, "xml", "syntax")
     ob_filenames = [os.path.join(path, f) for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
     for ob_filename in ob_filenames:
-        print("stx_db: ", ob_filename, file=sys.stderr)
+        # print("stx_db: ", ob_filename, file=sys.stderr)
         s = re.search("(sw[0-9]+).([AB]).syntax.xml", ob_filename)
         ob_name, ab = s.group(1), s.group(2)
         niteid = "{http://nite.sourceforge.net/}id"
@@ -126,13 +133,13 @@ def make_tree_bank(lexicalized: bool) -> Dict[str, Dict[str, Dict]]:
                     start = root_nt.attrib.get("{http://nite.sourceforge.net/}start", None)
                     end = root_nt.attrib.get("{http://nite.sourceforge.net/}end", None)
                     if start is None or end is None:
-                        print("WARNING: untimed sentence in {}, missing field".format(ob_name), file=sys.stderr)
+                        # print("WARNING: untimed sentence in {}, missing field".format(ob_name), file=sys.stderr)
                         continue
                     try:
                         float(start)
                         float(end)
                     except ValueError:
-                        print("WARNING: untimed sentence in {}, bad float".format(ob_name), file=sys.stderr)
+                        # print("WARNING: untimed sentence in {}, bad float".format(ob_name), file=sys.stderr)
                         continue
                     d[ob_name][sentence_id] = Sentence(linearize(root_nt, lexicalized, term_db),
                                                        float(start), float(end), ab).__dict__

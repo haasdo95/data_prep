@@ -88,7 +88,7 @@ def make_syntax_embedding(token_dict: Dict, trainable) -> nn.Embedding:
         emb.from_pretrained(torch.eye(len(token_dict)), freeze=True)
         return emb
     else:
-        raise NotImplemented("No trainable embedding yet. What's the hurry, pal?")
+        raise NotImplemented("No trainable embedding yet.")
 
 
 class Phase(Enum):
@@ -109,7 +109,7 @@ class SpeechSyntax(Dataset):
         # seeded random generator used only when partitioning data
         pair_paths = [os.path.join(root, pair_path) for pair_path in os.listdir(root)]
         pair_paths = list(filter(lambda p: p not in blacklist, pair_paths))
-        # shuffle deterministically: "Answer to the Ultimate Question of Life, the Universe, and Everything"
+        # shuffle deterministically
         random.Random(42).shuffle(pair_paths)
         # split data into 7: 2: 1
         if phase == Phase.TRAIN:
@@ -128,7 +128,8 @@ class SpeechSyntax(Dataset):
         gets us
             (1) speech audio tensor(torch.FloatTensor) (dim = 1)
             (2) syntax indices(torch.LongTensor) (dim = 1)
-        both have variable length
+            both have variable length
+        some token sanitization also happens here
         :return: (speech, syntax) tuples, both as 1-D torch.Tensor
         """
         # TODO: Make sure if I need to turn speech into one-hot?
@@ -206,7 +207,7 @@ def speech_syntax_collate_fn(data: List[Tuple[torch.FloatTensor, torch.LongTenso
 
 
 def get_dataloader(
-        root: str, phase: Phase, syntax_vocabulary: Dict[str, int], blacklist: Set[str], # dataset-related
+        root: str, phase: Phase, syntax_vocabulary: Dict[str, int], blacklist: Set[str],  # dataset-related
         batch_size: int, shuffle: bool, num_workers: int):  # dataloader-related
     """
     :return: a well-configured dataloader

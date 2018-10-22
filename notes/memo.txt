@@ -13,4 +13,5 @@ cat out/out_unlex.json | python materialize.py
 
 # batch convert: .sph -> .wav
 # NOTE: swbd is 8-bit mu-law
-for f in *.sph; do sox -t sph "$f" -b 8 -e unsigned-integer -t wav "${f%.*}.wav"; done
+for f in *.sph; do sox -t sph -e u-law "$f" -b 16 -e signed-integer -t wav "${f%.*}.wav"; done
+## Make sure that sox uses inverse mu-law

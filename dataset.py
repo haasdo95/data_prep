@@ -10,6 +10,7 @@ from torch import utils
 import re
 import sys
 import numpy as np
+import librosa
 from collections import defaultdict
 
 """
@@ -73,6 +74,7 @@ def syntax_token_type(root: str) -> Tuple[Dict[str, int], Set[str]]:
     # TODO: due to homophone but given correct POS tag anyway
     # TODO: I think it's totally okay to collapse things like "^VP" and "VP"
     token_set = list(token_set.keys())
+    token_set.remove("")  # caused by splitting things like [S[]]
 
     tokens = sorted(token_set)  # make sure that the mapping of embedding is deterministic
     token_dict = {}
@@ -98,7 +100,8 @@ class Phase(Enum):
 
 
 class SpeechSyntax(Dataset):
-    def __init__(self, root: str, phase: Phase, syntax_vocabulary: Dict[str, int], blacklist: Set[str]):
+    def __init__(self,
+                 root: str, phase: Phase, syntax_vocabulary: Dict[str, int], blacklist: Set[str]):
         """
         :param root: data dir
         :param phase: train, validate, or test
@@ -107,6 +110,9 @@ class SpeechSyntax(Dataset):
         """
         self.phase = phase
         self.syntax_vocabulary = syntax_vocabulary
+        # True if we want to return the origin audio ndarray as well;
+        # otherwise, only MFCC features get returned
+        self.return_original = False
         # seeded random generator used only when partitioning data
         pair_paths = [os.path.join(root, pair_path) for pair_path in os.listdir(root)]
         pair_paths = list(filter(lambda p: p not in blacklist, pair_paths))
@@ -121,24 +127,51 @@ class SpeechSyntax(Dataset):
             assert phase == Phase.TEST
             self.pair_paths = pair_paths[int(0.9 * len(pair_paths)):]
 
+    @staticmethod
+    def mfcc(inp: np.ndarray,
+             n_fft: int=2048, hop_length: int=512,
+             n_mels: int = 22, n_mfcc: int = 13,
+             ):
+        """
+        According to some sources(http://research.cs.tamu.edu/prism/lectures/sp/l9.pdf)
+        people usually use R = 22, N = 13 for sampling rate = 8kHz
+        :param inp: input in time domain, 1-D
+        :param n_fft: FFT window size
+        :param hop_length: how far we move the window each time
+        :param n_mels: number of Mel filters
+        :param n_mfcc: number of MFCC features
+        :return: M(np.ndarray) [shape=(t, n_mfcc)], where t:=#(stft bins)
+        # TODO: make sure that this configuration is okay
+        """
+        # form melspectrogram first
+        melspectrogram = librosa.feature.melspectrogram(
+            y=inp, sr=8000,  # args of librosa.feature.melspectrogram
+            n_fft=n_fft, hop_length=hop_length,  # stft specification
+            n_mels=n_mels,  # args of librosa.filters.mel
+        )  # TODO: make sure default n_fft=2048 and hop_length=512 are okay
+        log_powered_melspectrogram = librosa.power_to_db(melspectrogram)
+        return librosa.feature.mfcc(S=log_powered_melspectrogram, n_mfcc=n_mfcc).T  # transposing
+
     def __len__(self):
         return len(self.pair_paths)
 
-    def __getitem__(self, index) -> Tuple[torch.FloatTensor, torch.LongTensor]:
+    def __getitem__(self, index) -> Tuple[Union[torch.FloatTensor, Tuple[torch.LongTensor, torch.FloatTensor]], torch.LongTensor]:
         """
         gets us
             (1) speech audio tensor(torch.FloatTensor) (dim = 1)
             (2) syntax indices(torch.LongTensor) (dim = 1)
             both have variable length
         some token sanitization also happens here
-        :return: (speech, syntax) tuples, both as 1-D torch.Tensor
+        :return: (mfcc_speech[t, n_mfcc], syntax) tuples if not return_original
+        :return: ((raw_speech[N,], mfcc_speech[t, n_mfcc]), syntax) tuples if return_original
         """
         # TODO: Make sure if I need to turn speech into one-hot?
         # TODO: If not, is there anything else I need to do to process it?
         path = self.pair_paths[index]
         # handle speech
-        _, speech = wavfile.read(os.path.join(path, "speech.wav"))  # speech is 1-D
-        speech = torch.from_numpy(speech)
+        _, raw_speech = wavfile.read(os.path.join(path, "speech.wav"))  # speech is 1-D
+        mfcc_speech = self.mfcc(raw_speech.astype(dtype=np.float))
+        mfcc_speech = torch.from_numpy(mfcc_speech)
         # handle syntax
         with open(os.path.join(path, "syntax.txt")) as f:
             syntax = f.read()
@@ -146,7 +179,7 @@ class SpeechSyntax(Dataset):
         # ^XP -> XP
         # XP | YP -> XP
         syntax_tokens = re.split("([\[\]])", syntax)
-        syntax_tokens.remove("")
+        syntax_tokens = list(filter(lambda t: t != "", syntax_tokens))  # remove ""
         for i in range(len(syntax_tokens)):
             st = syntax_tokens[i]
             if re.match("^\^[A-Z]+\$?$", st):
@@ -154,7 +187,11 @@ class SpeechSyntax(Dataset):
             elif "|" in st:
                 syntax_tokens[i] = st.split("|")[0]
         syntax_idx = torch.LongTensor([self.syntax_vocabulary[st] for st in syntax_tokens])
-        return speech, syntax_idx
+
+        if self.return_original:
+            return (torch.from_numpy(raw_speech), mfcc_speech), syntax_idx
+        else:
+            return mfcc_speech, syntax_idx
 
 
 def _pack_sequences(sequences: List[torch.Tensor]) -> Tuple[nn.utils.rnn.PackedSequence, torch.LongTensor]:
@@ -165,7 +202,7 @@ def _pack_sequences(sequences: List[torch.Tensor]) -> Tuple[nn.utils.rnn.PackedS
     :return: INVERTED perm index to restore order later (after we are through RNN)
     """
     # We must remember the permutation index to restore the order before sorting
-    lengths = torch.Tensor([len(seq) for seq in sequences])
+    lengths = torch.Tensor([seq.shape[0] for seq in sequences])
     _, perm_index = lengths.sort(dim=0, descending=True)
     # sort by length in decreasing order
     sorted_sequences_by_length = [sequences[i] for i in perm_index]
@@ -193,9 +230,9 @@ def restore_order(data: torch.Tensor, invert_perm_index: torch.LongTensor) -> to
     return data.index_select(dim=0, index=invert_perm_index)
 
 
-def speech_syntax_collate_fn(data: List[Tuple[torch.FloatTensor, torch.LongTensor]]) \
-        -> Tuple[Tuple[nn.utils.rnn.PackedSequence, torch.LongTensor],
-                 Tuple[nn.utils.rnn.PackedSequence, torch.LongTensor]]:
+def speech_syntax_collate_fn(data: List[Tuple[Union[torch.FloatTensor, Tuple[torch.LongTensor, torch.FloatTensor]], torch.LongTensor]]) \
+        -> Union[Tuple[Tuple[nn.utils.rnn.PackedSequence, torch.LongTensor], Tuple[nn.utils.rnn.PackedSequence, torch.LongTensor]],
+        Tuple[Tuple[nn.utils.rnn.PackedSequence, torch.LongTensor], Tuple[nn.utils.rnn.PackedSequence, torch.LongTensor], Tuple[nn.utils.rnn.PackedSequence, torch.LongTensor]]]:
     """
     The default collate_fn in DataSet can't deal with variable-length input
     In this function we'll pack it and make it palatable for RNN
@@ -203,17 +240,32 @@ def speech_syntax_collate_fn(data: List[Tuple[torch.FloatTensor, torch.LongTenso
     :return: a batch of packed speech, a batch of packed syntax (syntax indices)
     :return: bundled with their INVERTED permutation index of sorting
     """
-    speeches, syntaxes = zip(*data)
-    return _pack_sequences(speeches), _pack_sequences(syntaxes)
+    if type(data[0][0]) is not tuple:
+        speeches, syntaxes = zip(*data)
+        return _pack_sequences(speeches), _pack_sequences(syntaxes)
+    else:  # returning raw speech as well
+        raw_speech = []
+        mfcc_speech = []
+        syntaxes = []
+        for (raw, mfcc), syntax in data:
+            raw_speech.append(raw)
+            mfcc_speech.append(mfcc)
+            syntaxes.append(syntax)
+        _pack_sequences(raw_speech)
+        _pack_sequences(mfcc_speech)
+        _pack_sequences(syntaxes)
+        return _pack_sequences(raw_speech), _pack_sequences(mfcc_speech), _pack_sequences(syntaxes)
 
 
 def get_dataloader(
         root: str, phase: Phase, syntax_vocabulary: Dict[str, int], blacklist: Set[str],  # dataset-related
-        batch_size: int, shuffle: bool, num_workers: int):  # dataloader-related
+        batch_size: int, shuffle: bool, num_workers: int,  # dataloader-related
+        return_original=False):  # miscellaneous
     """
     :return: a well-configured dataloader
     """
     dataset = SpeechSyntax(root, phase, syntax_vocabulary, blacklist)
+    dataset.return_original = return_original
     return utils.data.DataLoader(dataset,
                                  batch_size=batch_size,
                                  shuffle=shuffle,

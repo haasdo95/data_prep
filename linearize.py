@@ -45,9 +45,10 @@ def linearize(tree: ET.Element, lexicalized: bool, term_db: Dict[str, Dict[str, 
         observation_id, terminal_id = s.group(1), s.group(2)
         if terminal_id in term_db[observation_id]:
             word = term_db[observation_id][terminal_id]
-            # NOTE: we ignore SIL since it is not a part of syntax
+            # NOTE: ignored SIL since it is basically not a part of syntax
             # a trace is caused by syntactic movement that is rather tough to handle
-            if word.pos == "SIL":
+            # NOTE: decided to remove trace(as well as it's associated NT) as well
+            if word.pos == "SIL" or word.pos == "TRACE":
                 return ""
         else:
             print("WARNING: word discrepancy on {}, {}".format(observation_id, terminal_id), file=sys.stderr)
@@ -58,9 +59,21 @@ def linearize(tree: ET.Element, lexicalized: bool, term_db: Dict[str, Dict[str, 
             return "[{}[{}]]".format(word.pos, word.orth)
     else:
         s = "[" + tree.attrib["cat"]
+        all_empty = True
         for child in tree:
-            s += linearize(child, lexicalized, term_db)
+            # according to http://web.science.mq.edu.au/~mjohnson/papers/acl02-en-slides.pdf
+            # also need to handle "Empty compound SBAR"
+            # e.g. "Things changed", said [Empty SBAR] Tom.
+            linear_child = linearize(child, lexicalized, term_db)
+            if linear_child != "":
+                all_empty = False
+            #     removable = len(tree) == 1 or ((len(tree) == 2) and tree.attrib["cat"] == "SBAR")
+            #     assert removable
+            #     return ""
+            s += linear_child
         s += "]"
+        if all_empty:  # if all the pos tags of a subtree are TRACE, simply prune the subtree
+            return ""
         return s
 
 

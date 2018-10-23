@@ -129,28 +129,29 @@ class SpeechSyntax(Dataset):
 
     @staticmethod
     def mfcc(inp: np.ndarray,
-             n_fft: int=2048, hop_length: int=512,
-             n_mels: int = 22, n_mfcc: int = 13,
+             n_fft: int=256, hop_length: int=80,
+             n_mels: int = 26, n_mfcc: int = 13,
              ):
         """
         According to some sources(http://research.cs.tamu.edu/prism/lectures/sp/l9.pdf)
-        people usually use R = 22, N = 13 for sampling rate = 8kHz
+        people usually use R = 26, N = 13 for sampling rate = 8kHz
         :param inp: input in time domain, 1-D
         :param n_fft: FFT window size
         :param hop_length: how far we move the window each time
         :param n_mels: number of Mel filters
         :param n_mfcc: number of MFCC features
         :return: M(np.ndarray) [shape=(t, n_mfcc)], where t:=#(stft bins)
-        # TODO: make sure that this configuration is okay
+        # NOTE: hop_length equals 10ms -> 8000 * (10ms / 1000ms) = 80. window size is around 30ms
         """
         # form melspectrogram first
         melspectrogram = librosa.feature.melspectrogram(
             y=inp, sr=8000,  # args of librosa.feature.melspectrogram
             n_fft=n_fft, hop_length=hop_length,  # stft specification
             n_mels=n_mels,  # args of librosa.filters.mel
-        )  # TODO: make sure default n_fft=2048 and hop_length=512 are okay
+        )
         log_powered_melspectrogram = librosa.power_to_db(melspectrogram)
-        return librosa.feature.mfcc(S=log_powered_melspectrogram, n_mfcc=n_mfcc).T  # transposing
+        # transposing to make first dim variable-length(spectrums of the spectrogram)
+        return librosa.feature.mfcc(S=log_powered_melspectrogram, n_mfcc=n_mfcc).T
 
     def __len__(self):
         return len(self.pair_paths)
@@ -165,8 +166,6 @@ class SpeechSyntax(Dataset):
         :return: (mfcc_speech[t, n_mfcc], syntax) tuples if not return_original
         :return: ((raw_speech[N,], mfcc_speech[t, n_mfcc]), syntax) tuples if return_original
         """
-        # TODO: Make sure if I need to turn speech into one-hot?
-        # TODO: If not, is there anything else I need to do to process it?
         path = self.pair_paths[index]
         # handle speech
         _, raw_speech = wavfile.read(os.path.join(path, "speech.wav"))  # speech is 1-D

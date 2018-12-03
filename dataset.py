@@ -250,9 +250,6 @@ def speech_syntax_collate_fn(data: List[Tuple[Union[torch.FloatTensor, Tuple[tor
             raw_speech.append(raw)
             mfcc_speech.append(mfcc)
             syntaxes.append(syntax)
-        _pack_sequences(raw_speech)
-        _pack_sequences(mfcc_speech)
-        _pack_sequences(syntaxes)
         return _pack_sequences(raw_speech), _pack_sequences(mfcc_speech), _pack_sequences(syntaxes)
 
 
@@ -269,4 +266,5 @@ def get_dataloader(
                                  batch_size=batch_size,
                                  shuffle=shuffle,
                                  num_workers=num_workers,
+                                 pin_memory=True,
                                  collate_fn=speech_syntax_collate_fn)
